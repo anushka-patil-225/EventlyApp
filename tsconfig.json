@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    /* File Layout */
+    "rootDir": "./src",
+    "outDir": "./dist",
+
+    /* Environment */
+    "target": "ES2020",              // modern JS features supported by Node
+    "module": "CommonJS",            // Node.js module system
+    "moduleResolution": "node",      // standard Node resolution
+    "esModuleInterop": true,         // allow import express from "express"
+    "resolveJsonModule": true,       // allows importing JSON files
+    "types": ["node"],               // include Node.js types
+
+    /* TypeORM decorators need these */
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    /* Output helpers */
+    "sourceMap": true,
+
+    /* Type safety */
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
+}
