@@ -1,5 +1,7 @@
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
+import bcrypt from "bcrypt";
+import { signJwtForUser } from "../middleware/auth";
 
 export class UserService {
   private userRepo = AppDataSource.getRepository(User);
@@ -7,9 +9,38 @@ export class UserService {
   /**
    * Create a new user
    */
-  async createUser(data: Partial<User>): Promise<User> {
-    const user = this.userRepo.create(data);
-    return this.userRepo.save(user);
+  async createUser(data: Partial<User>): Promise<{ user: Omit<User, "password">; token: string }> {
+    if (!data.email || !data.password || !data.name) {
+      throw new Error("name, email and password are required");
+    }
+
+    const existing = await this.userRepo.findOne({ where: { email: data.email } });
+    if (existing) {
+      throw new Error("Email already in use");
+    }
+
+    const hashedPassword = await bcrypt.hash(String(data.password), 10);
+    const userToSave = this.userRepo.create({
+      name: data.name,
+      email: data.email,
+      password: hashedPassword,
+      role: data.role || "user",
+    } as User);
+
+    const saved = await this.userRepo.save(userToSave);
+    const { password, ...safeUser } = saved as any;
+    const token = signJwtForUser({ id: saved.id, email: saved.email, role: saved.role });
+    return { user: safeUser, token };
+  }
+
+  async login(email: string, password: string): Promise<{ user: Omit<User, "password">; token: string }> {
+    const user = await this.userRepo.findOne({ where: { email } });
+    if (!user) throw new Error("Invalid credentials");
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) throw new Error("Invalid credentials");
+    const { password: _p, ...safeUser } = user as any;
+    const token = signJwtForUser({ id: user.id, email: user.email, role: user.role });
+    return { user: safeUser, token };
   }
 
   /**
@@ -33,10 +64,14 @@ export class UserService {
    * Get all users (admin only)
    */
   async getAllUsers(): Promise<User[]> {
-    return this.userRepo.find({
+    const users = await this.userRepo.find({
       relations: ["bookings"],
       order: { id: "ASC" },
     });
+    return users.map((u: any) => {
+      const { password, ...rest } = u;
+      return rest;
+    }) as unknown as User[];
   }
 
   /**
@@ -46,8 +81,15 @@ export class UserService {
     const user = await this.userRepo.findOneBy({ id });
     if (!user) return null;
 
-    Object.assign(user, updates);
-    return this.userRepo.save(user);
+    // prevent password direct overwrite without hashing
+    const { password: newPassword, ...rest } = updates as any;
+    Object.assign(user, rest);
+    if (newPassword) {
+      user.password = await bcrypt.hash(String(newPassword), 10);
+    }
+    const saved = await this.userRepo.save(user);
+    const { password: _p, ...safe } = saved as any;
+    return safe as unknown as User;
   }
 
   /**
@@ -58,3 +100,4 @@ export class UserService {
     return result.affected !== 0;
   }
 }
+ 

@@ -5,7 +5,9 @@ import {
   getAllUsers,
   updateUser,
   deleteUser,
+  login,
 } from "../controllers/userController";
+import { authenticate, authorizeRoles } from "../middleware/auth";
 
 const router = Router();
 
@@ -26,7 +28,7 @@ const router = Router();
  *       200:
  *         description: List of users
  */
-router.get("/", getAllUsers);
+router.get("/", authenticate, authorizeRoles("admin"), getAllUsers);
 
 /**
  * @swagger
@@ -47,7 +49,7 @@ router.get("/", getAllUsers);
  *       404:
  *         description: User not found
  */
-router.get("/:id", getUserById);
+router.get("/:id", authenticate, getUserById);
 
 /**
  * @swagger
@@ -64,11 +66,15 @@ router.get("/:id", getUserById);
  *             required:
  *               - name
  *               - email
+ *               - password
  *             properties:
  *               name:
  *                 type: string
  *               email:
  *                 type: string
+ *               password:
+ *                 type: string
+ *                 format: password
  *               role:
  *                 type: string
  *                 enum: [user, admin]
@@ -80,6 +86,30 @@ router.post("/", createUser);
 
 /**
  * @swagger
+ * /users/login:
+ *   post:
+ *     summary: Login with email and password
+ *     tags: [Users]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Login success
+ */
+router.post("/login", login);
+
+/**
+ * @swagger
  * /users/{id}:
  *   put:
  *     summary: Update a user
@@ -88,7 +118,7 @@ router.post("/", createUser);
  *     summary: Delete a user
  *     tags: [Users]
  */
-router.put("/:id", updateUser);
-router.delete("/:id", deleteUser);
+router.put("/:id", authenticate, authorizeRoles("admin"), updateUser);
+router.delete("/:id", authenticate, authorizeRoles("admin"), deleteUser);
 
 export default router;

@@ -5,8 +5,8 @@ const userService = new UserService();
 
 export const createUser = async (req: Request, res: Response) => {
   try {
-    const user = await userService.createUser(req.body);
-    res.status(201).json(user);
+    const result = await userService.createUser(req.body);
+    res.status(201).json(result);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -51,5 +51,15 @@ export const deleteUser = async (req: Request, res: Response) => {
     res.json({ message: "User deleted successfully" });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+export const login = async (req: Request, res: Response) => {
+  try {
+    const { email, password } = req.body as { email: string; password: string };
+    const result = await userService.login(email, password);
+    res.json(result);
+  } catch (err: any) {
+    res.status(401).json({ error: err.message });
   }
 };

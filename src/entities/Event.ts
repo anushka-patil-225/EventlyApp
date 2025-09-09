@@ -1,5 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany, VersionColumn } from "typeorm";
 import { Booking } from "./Booking";
+import { Seat } from "./Seat";
 
 @Entity()
 export class Event {
@@ -27,4 +28,7 @@ export class Event {
 
   @OneToMany(() => Booking, booking => booking.event)
   bookings!: Booking[];
+
+  @OneToMany(() => Seat, seat => seat.event)
+  seats!: Seat[];
 }

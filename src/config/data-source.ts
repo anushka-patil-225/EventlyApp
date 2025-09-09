@@ -3,6 +3,7 @@ import { DataSource } from "typeorm";
 import { User } from "../entities/User";
 import { Booking } from "../entities/Booking";
 import { Event } from "../entities/Event";
+import { Seat } from "../entities/Seat"; // 👈 ADD THIS
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -15,10 +16,9 @@ export const AppDataSource = new DataSource({
   password: process.env.DB_PASS,
   database: process.env.DB_NAME,
   schema: "evently",   
-  synchronize: true,   // Auto-create tables in dev (be careful in prod)
+  synchronize: false,     // 👈 turn OFF when using migrations
   logging: true,
-  entities: [User, Booking, Event],
-  migrations: [],
+  entities: [User, Booking, Event, Seat], // 👈 Seat included
+  migrations: ["src/migration/*.ts"],
   subscribers: [],
 });
-

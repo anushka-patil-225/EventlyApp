@@ -9,6 +9,15 @@ const options: swaggerJsdoc.Options = {
       title: "Evently API",
       version: "1.0.0",
       description: "API documentation for Evently backend",
+    },  
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+      },
     },
     servers: [
       {
