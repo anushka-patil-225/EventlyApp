@@ -7,7 +7,7 @@ import {
   updateEvent,
   deleteEvent,
   analytics,
-  generateSeats,
+  getSeatAvailability,
 } from "../controllers/eventController";
 
 const router = Router();
@@ -65,6 +65,23 @@ router.get("/:id", getEventById);
 
 /**
  * @swagger
+ * /events/{id}/seats:
+ *   get:
+ *     summary: Get seat availability bitmap for an event (true=taken, false=free)
+ *     tags: [Events]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: Seat availability
+ */
+router.get("/:id/seats", getSeatAvailability);
+
+/**
+ * @swagger
  * /events:
  *   post:
  *     summary: Create event (admin)
@@ -83,9 +100,7 @@ router.get("/:id", getEventById);
  *               venue: { type: string }
  *               time: { type: string, format: date-time }
  *               capacity: { type: integer }
- *               generateSeats: { type: boolean, example: true }
- *               rows: { type: integer, example: 10 }
- *               cols: { type: integer, example: 10 }
+ *
  *     responses:
  *       201:
  *         description: Created
@@ -251,33 +266,7 @@ router.delete("/:id", authenticate, authorizeRoles("admin"), deleteEvent);
  */
 router.get("/analytics/summary", authenticate, authorizeRoles("admin"), analytics);
 
-/**
- * @swagger
- * /events/{id}/seats/generate:
- *   post:
- *     summary: Generate simple sequential seats for an event (admin)
- *     tags: [Events]
- *     security: [ { bearerAuth: [] } ]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema: { type: integer }
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [rows]
- *             properties:
- *               rows: { type: integer, example: 10 }
- *               prefix: { type: string, example: "A-" }
- *     responses:
- *       201:
- *         description: Seats created
- */
-router.post("/:id/seats/generate", authenticate, authorizeRoles("admin"), generateSeats);
+// Seat generation route removed (seat functionality deprecated) — Swagger block deleted
 
 export default router;
 

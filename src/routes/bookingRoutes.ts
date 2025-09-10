@@ -7,10 +7,8 @@ import {
   eventBookings,
   analytics,
 } from "../controllers/bookingController";
-import SeatService from "../services/seatService";
 
 const router = Router();
-const seatService = new SeatService();
 
 /**
  * @swagger
@@ -35,6 +33,7 @@ const seatService = new SeatService();
  *             required: [eventId]
  *             properties:
  *               eventId: { type: integer }
+ *               seatNumber: { type: integer, description: "Optional 1-based seat number" }
  *     responses:
  *       201:
  *         description: Booking created
@@ -210,38 +209,7 @@ router.get("/event/:eventId", authenticate, authorizeRoles("admin"), eventBookin
  */
 router.get("/analytics/summary", authenticate, authorizeRoles("admin"), analytics);
 
-/**
- * @swagger
- * /bookings/hold:
- *   post:
- *     summary: Hold seats temporarily for the current user
- *     tags: [Bookings]
- *     security: [ { bearerAuth: [] } ]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [eventId, count]
- *             properties:
- *               eventId: { type: integer }
- *               count: { type: integer }
- *               ttlSeconds: { type: integer }
- *     responses:
- *       201:
- *         description: Seats held
- */
-router.post("/hold", authenticate, async (req, res) => {
-  try {
-    const userId = (req as any).user?.id as number;
-    const { eventId, count, ttlSeconds } = req.body as { eventId: number; count: number; ttlSeconds?: number };
-    const seatIds = await seatService.holdSeats({ eventId: Number(eventId), count: Number(count), heldBy: String(userId), ttlSeconds });
-    res.status(201).json({ seatIds, expiresInSeconds: ttlSeconds ?? 120 });
-  } catch (err: any) {
-    res.status(400).json({ error: err.message });
-  }
-});
+// Seat hold endpoint removed as seat functionality has been deprecated (Swagger block deleted)
 
 export default router;
 

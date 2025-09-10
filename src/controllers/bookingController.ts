@@ -6,8 +6,8 @@ const bookingService = new BookingService();
 export const createBooking = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id as number;
-    const { eventId, seatIds } = req.body as { eventId: number; seatIds?: string[] };
-    const booking = await bookingService.createBooking(Number(userId), Number(eventId), seatIds);
+    const { eventId, seatNumber } = req.body as { eventId: number; seatNumber?: number };
+    const booking = await bookingService.createBooking(Number(userId), Number(eventId), undefined, seatNumber);
     res.status(201).json(booking);
   } catch (err: any) {
     res.status(400).json({ error: err.message });

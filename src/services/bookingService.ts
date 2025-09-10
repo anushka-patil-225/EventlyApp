@@ -16,7 +16,7 @@ export class BookingService {
    * Create a booking for a user on an event.
    * If seatIds provided, confirms those seats; otherwise reserves any N seats.
    */
-  async createBooking(userId: number, eventId: number, seatIds?: string[]): Promise<Booking> {
+  async createBooking(userId: number, eventId: number, _seatIds?: string[], seatNumber?: number): Promise<Booking> {
     const [user, event] = await Promise.all([
       this.userRepo.findOneBy({ id: userId }),
       this.eventRepo.findOneBy({ id: eventId }),
@@ -33,10 +33,31 @@ export class BookingService {
     });
     if (existing) throw new Error("You already have an active booking for this event");
 
-    const seatsToConfirm = seatIds && seatIds.length > 0 ? seatIds : undefined;
+    // If seatNumber specified: use Redis bitmap to atomically acquire the seat
+    if (seatNumber != null) {
+      if (seatNumber < 1 || seatNumber > event.capacity) {
+        throw new Error("Invalid seat number");
+      }
+      const acquired = await this.seatService.tryAcquireSeat(event.id, seatNumber);
+      if (!acquired) {
+        throw new Error("Seat already taken");
+      }
+      await this.eventService.reserveSeats(event.id, 1);
+      const booking = this.bookingRepo.create({ user, event, status: "booked", seatNumber });
+      try {
+        return await this.bookingRepo.save(booking);
+      } catch (err) {
+        // If DB save fails (e.g., unique constraint) release the seat
+        await this.seatService.releaseSeat(event.id, seatNumber);
+        await this.eventService.releaseSeats(event.id, 1);
+        throw err as Error;
+      }
+    }
 
-    // New flow: use SeatService to atomically assign seats and create booking
-    return this.seatService.confirmBookingWithSeats({ user, event, seatIds: seatsToConfirm ?? [] });
+    // Fallback: no seat selection — ensure capacity and create booking without seatNumber
+    await this.eventService.reserveSeats(event.id, 1);
+    const booking = this.bookingRepo.create({ user, event, status: "booked", seatNumber: null });
+    return this.bookingRepo.save(booking);
   }
 
   /**
@@ -58,8 +79,10 @@ export class BookingService {
 
     booking.status = "cancelled";
     const saved = await this.bookingRepo.save(booking);
-    // Release any seats tied to this booking
-    await this.seatService.releaseSeatsByBooking(booking.id);
+    await this.eventService.releaseSeats(booking.event.id, 1);
+    if (booking.seatNumber != null) {
+      await this.seatService.releaseSeat(booking.event.id, booking.seatNumber);
+    }
     return saved;
   }
 
