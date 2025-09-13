@@ -21,11 +21,11 @@ const options: swaggerJsdoc.Options = {
     },
     servers: [
       {
-        url: "http://localhost:3000", // change if deployed
+        url: "https://eventlyapp.onrender.com/", 
       },
     ],
   },
-  apis: ["./src/routes/*.ts"], // scan route files for docs
+  apis: ["./src/routes/*.ts"], 
 };
 
 const swaggerSpec = swaggerJsdoc(options);
