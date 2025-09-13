@@ -13,7 +13,7 @@ export const AppDataSource = new DataSource({
   url: process.env.DATABASE_URL,
   schema: "evently",
   ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : false,
-  synchronize: false,
+  synchronize: true,
   logging: true,
   entities: [__dirname + "/../entities/*.{ts,js}"],
   migrations: [__dirname + "/../migrations/*.{ts,js}"],
