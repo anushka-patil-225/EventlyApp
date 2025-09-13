@@ -47,7 +47,15 @@ export class EventService {
     // minimal select for regular requests
     return this.eventRepo.findOne({
       where: { id },
-      select: ["id", "name", "venue", "time", "capacity", "bookedSeats", "version"],
+      select: [
+        "id",
+        "name",
+        "venue",
+        "time",
+        "capacity",
+        "bookedSeats",
+        "version",
+      ],
     });
   }
 
@@ -92,7 +100,10 @@ export class EventService {
     return { items, total, page, pageSize };
   }
 
-  async updateEvent(id: number, updates: Partial<Event>): Promise<Event | null> {
+  async updateEvent(
+    id: number,
+    updates: Partial<Event>
+  ): Promise<Event | null> {
     const event = await this.eventRepo.findOneBy({ id });
     if (!event) return null;
 
@@ -128,7 +139,11 @@ export class EventService {
    * - This avoids race conditions and pessimistic locking while being highly concurrent-safe.
    * - We also retry a few times in case of transient conflicts.
    */
-  async reserveSeats(eventId: number, seats: number, maxRetries = 3): Promise<Event> {
+  async reserveSeats(
+    eventId: number,
+    seats: number,
+    maxRetries = 3
+  ): Promise<Event> {
     if (seats <= 0) throw new Error("seats must be > 0");
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -137,8 +152,19 @@ export class EventService {
         .createQueryBuilder()
         .update(Event)
         .set({ bookedSeats: () => `bookedSeats + ${seats}` })
-        .where("id = :id AND bookedSeats + :seats <= capacity", { id: eventId, seats })
-        .returning(["id", "name", "venue", "time", "capacity", "bookedSeats", "version"])
+        .where("id = :id AND bookedSeats + :seats <= capacity", {
+          id: eventId,
+          seats,
+        })
+        .returning([
+          "id",
+          "name",
+          "venue",
+          "time",
+          "capacity",
+          "bookedSeats",
+          "version",
+        ])
         .execute();
 
       // When rowCount is 0, either event missing or not enough capacity (or concurrent change).
@@ -188,7 +214,15 @@ export class EventService {
       .update(Event)
       .set({ bookedSeats: () => `GREATEST(bookedSeats - ${seats}, 0)` })
       .where("id = :id", { id: eventId })
-      .returning(["id", "name", "venue", "time", "capacity", "bookedSeats", "version"])
+      .returning([
+        "id",
+        "name",
+        "venue",
+        "time",
+        "capacity",
+        "bookedSeats",
+        "version",
+      ])
       .execute();
 
     if (!res.raw || res.raw.length === 0) throw new Error("Event not found");
@@ -219,8 +253,8 @@ export class EventService {
         "event.id AS id",
         "event.name AS name",
         "event.capacity AS capacity",
-        "event.bookedSeats AS bookedSeats",
-        "CASE WHEN event.capacity = 0 THEN 0 ELSE (event.bookedSeats::float / event.capacity::float) * 100 END AS utilization_pct",
+        `"event"."bookedSeats" AS "bookedSeats"`, // <-- use double quotes here
+        `CASE WHEN event.capacity = 0 THEN 0 ELSE ("event"."bookedSeats"::float / event.capacity::float) * 100 END AS "utilization_pct"`,
       ])
       .orderBy("utilization_pct", "DESC")
       .getRawMany();
@@ -235,7 +269,11 @@ export class EventService {
 
     return {
       totalEvents,
-      mostPopular: mostPopular.map((r) => ({ id: Number(r.id), name: r.name as string, bookings: Number(r.bookings) })),
+      mostPopular: mostPopular.map((r) => ({
+        id: Number(r.id),
+        name: r.name as string,
+        bookings: Number(r.bookings),
+      })),
       utilization,
     };
   }

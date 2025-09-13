@@ -30,7 +30,7 @@ export class Event {
   @Column()
   capacity!: number;
 
-  @Column({ default: 0 })
+  @Column({ name: "bookedSeats", default: 0 })
   bookedSeats!: number;
 
   // Helps with optimistic locking (kept for compatibility, though we prefer atomic UPDATEs)

@@ -33,54 +33,58 @@ const router = Router();
  *             required: [eventId]
  *             properties:
  *               eventId: { type: integer }
- *               seatNumber: { type: integer, description: "Optional 1-based seat number" }
+ *               seatNumbers:
+ *                 type: array
+ *                 items: { type: integer }
+ *                 description: "Optional array of 1-based seat numbers"
  *     responses:
  *       201:
- *         description: Booking created
+ *         description: Bookings created
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 id:
- *                   type: integer
- *                 status:
- *                   type: string
- *                 createdAt:
- *                   type: string
- *                   format: date-time
- *                 user:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: integer
- *                     name:
- *                       type: string
- *                     email:
- *                       type: string
- *                 event:
- *                   type: object
- *                   properties:
- *                     id:
- *                       type: integer
- *                     name:
- *                       type: string
- *                     venue:
- *                       type: string
- *                     time:
- *                       type: string
- *                       format: date-time
- *                     capacity:
- *                       type: integer
- *                     bookedSeats:
- *                       type: integer
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                   status:
+ *                     type: string
+ *                   createdAt:
+ *                     type: string
+ *                     format: date-time
+ *                   user:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       name:
+ *                         type: string
+ *                       email:
+ *                         type: string
+ *                   event:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: integer
+ *                       name:
+ *                         type: string
+ *                       venue:
+ *                         type: string
+ *                       time:
+ *                         type: string
+ *                         format: date-time
+ *                       capacity:
+ *                         type: integer
+ *                       bookedSeats:
+ *                         type: integer
  *       400:
  *         description: Bad request
  *       401:
  *         description: Unauthorized
  */
 router.post("/", authenticate, createBooking);
-
 /**
  * @swagger
  * /bookings/{id}:
@@ -154,7 +158,12 @@ router.get("/me", authenticate, myBookings);
  *     tags: [Bookings]
  *     security: [ { bearerAuth: [] } ]
  */
-router.get("/event/:eventId", authenticate, authorizeRoles("admin"), eventBookings);
+router.get(
+  "/event/:eventId",
+  authenticate,
+  authorizeRoles("admin"),
+  eventBookings
+);
 
 /**
  * @swagger
@@ -207,10 +216,13 @@ router.get("/event/:eventId", authenticate, authorizeRoles("admin"), eventBookin
  *       500:
  *         description: Server error
  */
-router.get("/analytics/summary", authenticate, authorizeRoles("admin"), analytics);
+router.get(
+  "/analytics/summary",
+  authenticate,
+  authorizeRoles("admin"),
+  analytics
+);
 
 // Seat hold endpoint removed as seat functionality has been deprecated (Swagger block deleted)
 
 export default router;
-
-

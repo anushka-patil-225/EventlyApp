@@ -20,8 +20,9 @@ export class BookingService {
     userId: number,
     eventId: number,
     _seatIds?: string[],
-    seatNumber?: number
-  ): Promise<Booking> {
+    seatNumbers?: number[] // <-- changed from seatNumber?: number
+  ): Promise<Booking[]> {
+    // <-- returns array
     return await AppDataSource.transaction(async (manager) => {
       // Check existence with SELECT 1 instead of fetching full entity
       const userExists = await manager
@@ -35,55 +36,69 @@ export class BookingService {
 
       const event = await manager.getRepository(Event).findOne({
         where: { id: eventId },
-        select: ["id", "time", "capacity"], // only required fields
+        select: ["id", "time", "capacity"],
       });
       if (!event) throw new Error("Event not found");
       if (new Date(event.time) < new Date())
         throw new Error("Cannot book past events");
 
       // Use EXISTS instead of fetching entire row
-      const existing = await manager
-        .getRepository(Booking)
-        .createQueryBuilder("b")
-        .where("b.userId = :userId", { userId })
-        .andWhere("b.eventId = :eventId", { eventId })
-        .andWhere("b.status = 'booked'")
-        .select("1")
-        .getRawOne();
+      // const existing = await manager
+      //   .getRepository(Booking)
+      //   .createQueryBuilder("b")
+      //   .where("b.userId = :userId", { userId })
+      //   .andWhere("b.eventId = :eventId", { eventId })
+      //   .andWhere("b.status = 'booked'")
+      //   .select("1")
+      //   .getRawOne();
 
-      if (existing) throw new Error("You already have an active booking");
+      // if (existing) throw new Error("You already have an active booking");
 
-      // Seat-specific booking
-      if (seatNumber != null) {
-        if (seatNumber < 1 || seatNumber > event.capacity) {
-          throw new Error("Invalid seat number");
+      // Multi-seat booking
+      let seatCount = 1;
+      let acquiredSeats: number[] = [];
+      if (seatNumbers && seatNumbers.length > 0) {
+        seatCount = seatNumbers.length;
+        // Validate seat numbers
+        if (seatNumbers.some((n) => n < 1 || n > event.capacity)) {
+          throw new Error("Invalid seat number(s)");
         }
-
-        const acquired = await this.seatService.tryAcquireSeat(
+        // Try to acquire all seats atomically
+        acquiredSeats = await this.seatService.tryAcquireMultipleSeats(
           event.id,
-          seatNumber
+          seatNumbers
         );
-        if (!acquired) throw new Error("Seat already taken");
+        if (acquiredSeats.length !== seatNumbers.length) {
+          // Release any acquired seats
+          for (const n of acquiredSeats) {
+            await this.seatService.releaseSeat(event.id, n);
+          }
+          throw new Error("One or more seats already taken");
+        }
+        await this.eventService.reserveSeats(event.id, seatCount);
 
-        await this.eventService.reserveSeats(event.id, 1);
-
-        const booking = manager.create(Booking, {
-          user: { id: userId },
-          event: { id: eventId },
-          status: "booked",
-          seatNumber,
-        });
-
+        // Create a booking row for each seat
+        const bookings = seatNumbers.map((seatNumber) =>
+          manager.create(Booking, {
+            user: { id: userId },
+            event: { id: eventId },
+            status: "booked",
+            seatNumber,
+          })
+        );
         try {
-          return await manager.save(booking);
+          return await manager.save(bookings);
         } catch (err) {
-          await this.seatService.releaseSeat(event.id, seatNumber);
-          await this.eventService.releaseSeats(event.id, 1);
+          // Rollback: release seats and decrement bookedSeats
+          for (const n of seatNumbers) {
+            await this.seatService.releaseSeat(event.id, n);
+          }
+          await this.eventService.releaseSeats(event.id, seatCount);
           throw err;
         }
       }
 
-      // General booking (no seatNumber)
+      // General booking (no seatNumbers)
       await this.eventService.reserveSeats(event.id, 1);
       const booking = manager.create(Booking, {
         user: { id: userId },
@@ -92,7 +107,7 @@ export class BookingService {
         seatNumber: null,
       });
 
-      return manager.save(booking);
+      return [await manager.save(booking)];
     });
   }
 
@@ -121,7 +136,10 @@ export class BookingService {
 
       await this.eventService.releaseSeats(booking.event.id, 1);
       if (booking.seatNumber != null) {
-        await this.seatService.releaseSeat(booking.event.id, booking.seatNumber);
+        await this.seatService.releaseSeat(
+          booking.event.id,
+          booking.seatNumber
+        );
       }
 
       return saved;

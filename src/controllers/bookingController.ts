@@ -6,9 +6,20 @@ const bookingService = new BookingService();
 export const createBooking = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id as number;
-    const { eventId, seatNumber } = req.body as { eventId: number; seatNumber?: number };
-    const booking = await bookingService.createBooking(Number(userId), Number(eventId), undefined, seatNumber);
-    res.status(201).json(booking);
+    const { eventId, seatNumbers } = req.body as {
+      eventId: number;
+      seatNumbers?: number[];
+    };
+    if (!eventId) return res.status(400).json({ error: "eventId required" });
+
+    const bookings = await bookingService.createBooking(
+      Number(userId),
+      Number(eventId),
+      undefined,
+      seatNumbers
+    );
+
+    res.status(201).json(bookings);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -19,7 +30,11 @@ export const cancelBooking = async (req: Request, res: Response) => {
     const bookingId = Number(req.params.id);
     const requesterId = (req as any).user?.id as number;
     const isAdmin = (req as any).user?.role === "admin";
-    const booking = await bookingService.cancelBooking(bookingId, Number(requesterId), Boolean(isAdmin));
+    const booking = await bookingService.cancelBooking(
+      bookingId,
+      Number(requesterId),
+      Boolean(isAdmin)
+    );
     res.json(booking);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -30,11 +45,11 @@ export const myBookings = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id as number;
     console.log("Getting bookings for user ID:", userId);
-    
+
     if (!userId) {
       return res.status(401).json({ error: "User ID not found in token" });
     }
-    
+
     const bookings = await bookingService.getUserBookings(Number(userId));
     console.log("Found bookings:", bookings.length);
     res.json(bookings);
@@ -62,5 +77,3 @@ export const analytics = async (_req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-
