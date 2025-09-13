@@ -2,34 +2,57 @@ import { Entity, PrimaryGeneratedColumn, ManyToOne, Column, Unique, Index } from
 import { User } from "./User";
 import { Event } from "./Event";
 
-@Entity()
-@Unique("UK_event_seat", ["event", "seatNumber"]) // Prevents duplicate seat for same event
+/** booking */
+@Entity({ name: "booking", schema: "evently" })
+@Unique(['event', 'seatNumber']) // auto-name OK
 export class Booking {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @ManyToOne(() => User, user => user.bookings, { onDelete: "CASCADE" })
-  @Index("IDX_booking_user") // Optimizes queries filtering by user
+  @ManyToOne(() => User, u => u.bookings, { onDelete: "CASCADE" })
+  @Index()  // auto-name OK
   user!: User;
 
-  @ManyToOne(() => Event, event => event.bookings, { onDelete: "CASCADE" })
-  @Index("IDX_booking_event") // Optimizes queries filtering by event
+  @ManyToOne(() => Event, e => e.bookings, { onDelete: "CASCADE" })
+  @Index()  // auto-name OK
   event!: Event;
 
   @Column({ default: "booked" })
-  @Index("IDX_booking_status") // Helps queries filtering by status
+  @Index()  // auto-name OK
   status!: string;
 
-  // 1-based seat number; null for legacy bookings without seat selection
   @Column({ type: "int", nullable: true })
   seatNumber!: number | null;
 
   @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
-  @Index("IDX_booking_createdAt") // Speeds up analytics/daily stats queries
+  @Index()  // auto-name OK
   createdAt!: Date;
 }
 
-// Composite index for duplicate prevention & fast lookups
-@Index("IDX_booking_user_event_status", ["user", "event", "status"])
-@Entity()
-export class BookingIndexed extends Booking {}
+/** booking_indexed: separate entity, different physical table */
+@Entity({ name: "booking_indexed", schema: "evently" })
+@Unique(['event', 'seatNumber']) // auto-name; different from above
+@Index(['user', 'event', 'status']) // auto-name; different from above
+export class BookingIndexed {
+  @PrimaryGeneratedColumn()
+  id!: number;
+
+  @ManyToOne(() => User, u => u.bookings, { onDelete: "CASCADE" })
+  @Index()
+  user!: User;
+
+  @ManyToOne(() => Event, e => e.bookings, { onDelete: "CASCADE" })
+  @Index()
+  event!: Event;
+
+  @Column({ default: "booked" })
+  @Index()
+  status!: string;
+
+  @Column({ type: "int", nullable: true })
+  seatNumber!: number | null;
+
+  @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
+  @Index()
+  createdAt!: Date;
+}
