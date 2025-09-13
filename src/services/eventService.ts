@@ -31,27 +31,47 @@ export class EventService {
     return this.eventRepo.save(event);
   }
 
+  /**
+   * Get event by id. By default only selects basic fields; relations (bookings) are
+   * loaded only when explicitly requested to avoid heavy fetches.
+   */
   async getEventById(id: number, withBookings = false): Promise<Event | null> {
+    if (withBookings) {
+      // when admin wants bookings we return full entity with bookings relation
+      return this.eventRepo.findOne({
+        where: { id },
+        relations: ["bookings", "bookings.user"],
+      });
+    }
+
+    // minimal select for regular requests
     return this.eventRepo.findOne({
       where: { id },
-      relations: withBookings ? ["bookings", "bookings.user"] : undefined,
+      select: ["id", "name", "venue", "time", "capacity", "bookedSeats", "version"],
     });
   }
 
+  /**
+   * List events with pagination and search.
+   * Uses lower() + paramized LIKE for case-insensitive search and relies on DB indexes.
+   */
   async listEvents(params: ListEventsParams = {}) {
     const page = Math.max(1, params.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 10));
-    const where: FindOptionsWhere<Event> = {};
-
-    if (params.upcomingOnly) {
-      // handled in query builder below using >= NOW()
-    }
 
     const qb = this.eventRepo
       .createQueryBuilder("event")
-      .where("1=1");
+      .select([
+        "event.id",
+        "event.name",
+        "event.venue",
+        "event.time",
+        "event.capacity",
+        "event.bookedSeats",
+      ]);
 
     if (params.search) {
+      // use lower() to match how we expect the index to be used in simple cases
       qb.andWhere("(LOWER(event.name) LIKE :q OR LOWER(event.venue) LIKE :q)", {
         q: `%${params.search.toLowerCase()}%`,
       });
@@ -67,6 +87,7 @@ export class EventService {
       .skip((page - 1) * pageSize)
       .take(pageSize);
 
+    // getManyAndCount executes 2 SQLs but keeps logic concise and consistent with filters
     const [items, total] = await qb.getManyAndCount();
     return { items, total, page, pageSize };
   }
@@ -96,78 +117,128 @@ export class EventService {
   }
 
   /**
-   * Reserve seats with optimistic retries to prevent overselling.
+   * Reserve seats atomically using a single UPDATE statement.
+   *
+   * Rationale:
+   * - This approach performs the check and increment inside the DB atomically:
+   *   UPDATE event SET bookedSeats = bookedSeats + :seats
+   *   WHERE id = :id AND bookedSeats + :seats <= capacity
+   *   RETURNING *
+   *
+   * - This avoids race conditions and pessimistic locking while being highly concurrent-safe.
+   * - We also retry a few times in case of transient conflicts.
    */
   async reserveSeats(eventId: number, seats: number, maxRetries = 3): Promise<Event> {
     if (seats <= 0) throw new Error("seats must be > 0");
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
-      const event = await this.eventRepo.findOneBy({ id: eventId });
+      // Use a single atomic update. This avoids fetching -> modifying -> saving cycles that race.
+      const res = await this.eventRepo
+        .createQueryBuilder()
+        .update(Event)
+        .set({ bookedSeats: () => `bookedSeats + ${seats}` })
+        .where("id = :id AND bookedSeats + :seats <= capacity", { id: eventId, seats })
+        .returning(["id", "name", "venue", "time", "capacity", "bookedSeats", "version"])
+        .execute();
+
+      // When rowCount is 0, either event missing or not enough capacity (or concurrent change).
+      if (res.raw && res.raw.length > 0) {
+        // TypeORM returns raw DB row(s) in res.raw; map it to Event-like object
+        const saved = res.raw[0] as Event;
+        // Normalize types if needed (bookedSeats may be string depending on DB driver)
+        saved.bookedSeats = Number((saved as any).bookedSeats);
+        saved.capacity = Number((saved as any).capacity);
+        return saved;
+      }
+
+      // If no rows returned, check if event exists or not enough seats
+      const event = await this.eventRepo.findOne({
+        where: { id: eventId },
+        select: ["id", "bookedSeats", "capacity"],
+      });
       if (!event) throw new Error("Event not found");
-      
-      console.log(`Reserving ${seats} seats for event ${eventId}. Current bookedSeats: ${event.bookedSeats}, capacity: ${event.capacity}`);
-      
+
       if (event.bookedSeats + seats > event.capacity) {
         throw new Error("Not enough seats available");
       }
-      event.bookedSeats += seats;
-      
-      console.log(`After reservation - bookedSeats: ${event.bookedSeats}`);
-      
-      try {
-        const savedEvent = await this.eventRepo.save(event); // will bump version; concurrent save will throw
-        console.log(`Event saved successfully. Final bookedSeats: ${savedEvent.bookedSeats}`);
-        return savedEvent;
-      } catch (err) {
-        console.error(`Save attempt ${attempt + 1} failed:`, err);
-        if (attempt === maxRetries - 1) throw err as Error;
-        // small backoff before retry
+
+      // if the code reached here, it means there was a concurrent update that prevented the update
+      // retry after small backoff
+      if (attempt < maxRetries - 1) {
         await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
+        continue;
       }
+
+      throw new Error("Failed to reserve seats due to concurrent updates");
     }
+
     throw new Error("Failed to reserve seats after retries");
   }
 
+  /**
+   * Release seats: simple, safe decrement (never negative).
+   * We use a single UPDATE to avoid racey fetch->save patterns.
+   */
   async releaseSeats(eventId: number, seats: number): Promise<Event> {
     if (seats <= 0) throw new Error("seats must be > 0");
-    const event = await this.eventRepo.findOneBy({ id: eventId });
-    if (!event) throw new Error("Event not found");
-    event.bookedSeats = Math.max(0, event.bookedSeats - seats);
-    return this.eventRepo.save(event);
+
+    // perform atomic update: set bookedSeats = GREATEST(bookedSeats - seats, 0)
+    const res = await this.eventRepo
+      .createQueryBuilder()
+      .update(Event)
+      .set({ bookedSeats: () => `GREATEST(bookedSeats - ${seats}, 0)` })
+      .where("id = :id", { id: eventId })
+      .returning(["id", "name", "venue", "time", "capacity", "bookedSeats", "version"])
+      .execute();
+
+    if (!res.raw || res.raw.length === 0) throw new Error("Event not found");
+    const updated = res.raw[0] as Event;
+    updated.bookedSeats = Number((updated as any).bookedSeats);
+    updated.capacity = Number((updated as any).capacity);
+    return updated;
   }
 
-  /** Basic analytics for admins */
+  /** Basic analytics for admins (pushed to DB for aggregation) */
   async getAnalytics() {
     const totalEvents = await this.eventRepo.count();
 
     const mostPopular = await this.eventRepo
       .createQueryBuilder("event")
       .leftJoin("event.bookings", "booking")
-      .select(["event.id AS id", "event.name AS name"]).addSelect("COUNT(booking.id)", "bookings")
+      .select(["event.id AS id", "event.name AS name"])
+      .addSelect("COUNT(booking.id)", "bookings")
       .groupBy("event.id")
       .orderBy("bookings", "DESC")
       .limit(10)
       .getRawMany();
 
-    // Get all events with their current bookedSeats values
-    const events = await this.eventRepo.find();
-    
-    const utilization = events.map(event => ({
-      id: event.id,
-      name: event.name,
-      capacity: event.capacity,
-      bookedSeats: event.bookedSeats,
-      utilizationPct: event.capacity === 0 ? 0 : Number(((event.bookedSeats / event.capacity) * 100).toFixed(2)),
+    // Compute utilization in DB to avoid loading all event rows into memory when many events exist.
+    const utilizationRaw = await this.eventRepo
+      .createQueryBuilder("event")
+      .select([
+        "event.id AS id",
+        "event.name AS name",
+        "event.capacity AS capacity",
+        "event.bookedSeats AS bookedSeats",
+        "CASE WHEN event.capacity = 0 THEN 0 ELSE (event.bookedSeats::float / event.capacity::float) * 100 END AS utilization_pct",
+      ])
+      .orderBy("utilization_pct", "DESC")
+      .getRawMany();
+
+    const utilization = utilizationRaw.map((r) => ({
+      id: Number(r.id),
+      name: String(r.name),
+      capacity: Number(r.capacity),
+      bookedSeats: Number(r.bookedSeats),
+      utilizationPct: Number(Number(r.utilization_pct).toFixed(2)),
     }));
 
     return {
       totalEvents,
-      mostPopular: mostPopular.map(r => ({ id: Number(r.id), name: r.name as string, bookings: Number(r.bookings) })),
+      mostPopular: mostPopular.map((r) => ({ id: Number(r.id), name: r.name as string, bookings: Number(r.bookings) })),
       utilization,
     };
   }
 }
 
 export default EventService;
-
-

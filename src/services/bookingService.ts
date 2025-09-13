@@ -4,6 +4,7 @@ import { Event } from "../entities/Event";
 import { User } from "../entities/User";
 import EventService from "./eventService";
 import SeatService from "./seatService";
+import { DataSource } from "typeorm";
 
 export class BookingService {
   private bookingRepo = AppDataSource.getRepository(Booking);
@@ -13,124 +14,172 @@ export class BookingService {
   private seatService = new SeatService();
 
   /**
-   * Create a booking for a user on an event.
-   * If seatIds provided, confirms those seats; otherwise reserves any N seats.
+   * Create a booking (optimized with transactions & query shortcuts).
    */
-  async createBooking(userId: number, eventId: number, _seatIds?: string[], seatNumber?: number): Promise<Booking> {
-    const [user, event] = await Promise.all([
-      this.userRepo.findOneBy({ id: userId }),
-      this.eventRepo.findOneBy({ id: eventId }),
-    ]);
+  async createBooking(
+    userId: number,
+    eventId: number,
+    _seatIds?: string[],
+    seatNumber?: number
+  ): Promise<Booking> {
+    return await AppDataSource.transaction(async (manager) => {
+      // Check existence with SELECT 1 instead of fetching full entity
+      const userExists = await manager
+        .getRepository(User)
+        .createQueryBuilder("u")
+        .where("u.id = :userId", { userId })
+        .select("1")
+        .getRawOne();
 
-    if (!user) throw new Error("User not found");
-    if (!event) throw new Error("Event not found");
-    if (new Date(event.time) < new Date()) throw new Error("Cannot book past events");
+      if (!userExists) throw new Error("User not found");
 
-    // Prevent duplicate active booking by the same user for the same event
-    const existing = await this.bookingRepo.findOne({
-      where: { user: { id: userId }, event: { id: eventId }, status: "booked" },
-      relations: ["user", "event"],
-    });
-    if (existing) throw new Error("You already have an active booking for this event");
+      const event = await manager.getRepository(Event).findOne({
+        where: { id: eventId },
+        select: ["id", "time", "capacity"], // only required fields
+      });
+      if (!event) throw new Error("Event not found");
+      if (new Date(event.time) < new Date())
+        throw new Error("Cannot book past events");
 
-    // If seatNumber specified: use Redis bitmap to atomically acquire the seat
-    if (seatNumber != null) {
-      if (seatNumber < 1 || seatNumber > event.capacity) {
-        throw new Error("Invalid seat number");
+      // Use EXISTS instead of fetching entire row
+      const existing = await manager
+        .getRepository(Booking)
+        .createQueryBuilder("b")
+        .where("b.userId = :userId", { userId })
+        .andWhere("b.eventId = :eventId", { eventId })
+        .andWhere("b.status = 'booked'")
+        .select("1")
+        .getRawOne();
+
+      if (existing) throw new Error("You already have an active booking");
+
+      // Seat-specific booking
+      if (seatNumber != null) {
+        if (seatNumber < 1 || seatNumber > event.capacity) {
+          throw new Error("Invalid seat number");
+        }
+
+        const acquired = await this.seatService.tryAcquireSeat(
+          event.id,
+          seatNumber
+        );
+        if (!acquired) throw new Error("Seat already taken");
+
+        await this.eventService.reserveSeats(event.id, 1);
+
+        const booking = manager.create(Booking, {
+          user: { id: userId },
+          event: { id: eventId },
+          status: "booked",
+          seatNumber,
+        });
+
+        try {
+          return await manager.save(booking);
+        } catch (err) {
+          await this.seatService.releaseSeat(event.id, seatNumber);
+          await this.eventService.releaseSeats(event.id, 1);
+          throw err;
+        }
       }
-      const acquired = await this.seatService.tryAcquireSeat(event.id, seatNumber);
-      if (!acquired) {
-        throw new Error("Seat already taken");
-      }
+
+      // General booking (no seatNumber)
       await this.eventService.reserveSeats(event.id, 1);
-      const booking = this.bookingRepo.create({ user, event, status: "booked", seatNumber });
-      try {
-        return await this.bookingRepo.save(booking);
-      } catch (err) {
-        // If DB save fails (e.g., unique constraint) release the seat
-        await this.seatService.releaseSeat(event.id, seatNumber);
-        await this.eventService.releaseSeats(event.id, 1);
-        throw err as Error;
-      }
-    }
+      const booking = manager.create(Booking, {
+        user: { id: userId },
+        event: { id: eventId },
+        status: "booked",
+        seatNumber: null,
+      });
 
-    // Fallback: no seat selection — ensure capacity and create booking without seatNumber
-    await this.eventService.reserveSeats(event.id, 1);
-    const booking = this.bookingRepo.create({ user, event, status: "booked", seatNumber: null });
-    return this.bookingRepo.save(booking);
-  }
-
-  /**
-   * Cancel a booking. Only the booking owner or an admin can cancel.
-   * Releases the reserved seat.
-   */
-  async cancelBooking(bookingId: number, requesterId: number, requesterIsAdmin = false): Promise<Booking> {
-    const booking = await this.bookingRepo.findOne({
-      where: { id: bookingId },
-      relations: ["user", "event"],
+      return manager.save(booking);
     });
-    if (!booking) throw new Error("Booking not found");
-
-    if (!requesterIsAdmin && booking.user.id !== requesterId) {
-      throw new Error("Not authorized to cancel this booking");
-    }
-
-    if (booking.status === "cancelled") return booking;
-
-    booking.status = "cancelled";
-    const saved = await this.bookingRepo.save(booking);
-    await this.eventService.releaseSeats(booking.event.id, 1);
-    if (booking.seatNumber != null) {
-      await this.seatService.releaseSeat(booking.event.id, booking.seatNumber);
-    }
-    return saved;
   }
 
   /**
-   * Get booking history for a user (most recent first)
+   * Cancel booking (optimized with transaction & direct updates).
+   */
+  async cancelBooking(
+    bookingId: number,
+    requesterId: number,
+    requesterIsAdmin = false
+  ): Promise<Booking> {
+    return await AppDataSource.transaction(async (manager) => {
+      const booking = await manager.findOne(Booking, {
+        where: { id: bookingId },
+        relations: ["user", "event"],
+      });
+      if (!booking) throw new Error("Booking not found");
+
+      if (!requesterIsAdmin && booking.user.id !== requesterId) {
+        throw new Error("Not authorized to cancel this booking");
+      }
+      if (booking.status === "cancelled") return booking;
+
+      booking.status = "cancelled";
+      const saved = await manager.save(booking);
+
+      await this.eventService.releaseSeats(booking.event.id, 1);
+      if (booking.seatNumber != null) {
+        await this.seatService.releaseSeat(booking.event.id, booking.seatNumber);
+      }
+
+      return saved;
+    });
+  }
+
+  /**
+   * User booking history (fetch only required fields).
    */
   async getUserBookings(userId: number) {
-    console.log("BookingService: Getting bookings for userId:", userId);
-    try {
-      const bookings = await this.bookingRepo.find({
-        where: { user: { id: userId } },
-        relations: ["event"],
-        order: { createdAt: "DESC" },
-      });
-      console.log("BookingService: Found bookings:", bookings.length);
-      return bookings;
-    } catch (error) {
-      console.error("BookingService: Error fetching user bookings:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * List bookings for an event (admin)
-   */
-  async getEventBookings(eventId: number) {
     return this.bookingRepo.find({
-      where: { event: { id: eventId } },
-      relations: ["user"],
+      where: { user: { id: userId } },
+      relations: ["event"],
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        seatNumber: true,
+        event: { id: true, name: true, time: true },
+      },
       order: { createdAt: "DESC" },
     });
   }
 
   /**
-   * Basic analytics across bookings
+   * Event bookings (admin view).
+   */
+  async getEventBookings(eventId: number) {
+    return this.bookingRepo.find({
+      where: { event: { id: eventId } },
+      relations: ["user"],
+      select: {
+        id: true,
+        status: true,
+        seatNumber: true,
+        createdAt: true,
+        user: { id: true, email: true, name: true },
+      },
+      order: { createdAt: "DESC" },
+    });
+  }
+
+  /**
+   * Analytics optimized for DB-level aggregation.
    */
   async getAnalytics() {
-    const qb = this.bookingRepo.createQueryBuilder("booking");
-    const totalBookings = await qb.getCount();
-
-    const cancelledCount = await this.bookingRepo.count({ where: { status: "cancelled" } });
+    const totalBookings = await this.bookingRepo.count();
+    const cancelledCount = await this.bookingRepo.count({
+      where: { status: "cancelled" },
+    });
 
     const mostBookedEvents = await this.bookingRepo
       .createQueryBuilder("b")
       .leftJoin("b.event", "event")
-      .select(["event.id AS id", "event.name AS name"]) 
+      .select("event.id", "id")
+      .addSelect("event.name", "name")
       .addSelect("COUNT(b.id)", "bookings")
-      .where("b.status = :status", { status: "booked" })
+      .where("b.status = 'booked'")
       .groupBy("event.id")
       .orderBy("bookings", "DESC")
       .limit(10)
@@ -139,7 +188,7 @@ export class BookingService {
     const dailyStats = await this.bookingRepo
       .createQueryBuilder("b")
       .select("DATE_TRUNC('day', b.createdAt)", "day")
-      .addSelect("COUNT(*)", "bookings")
+      .addSelect("COUNT(b.id)", "bookings")
       .groupBy("day")
       .orderBy("day", "DESC")
       .limit(30)
@@ -148,12 +197,17 @@ export class BookingService {
     return {
       totalBookings,
       cancelledCount,
-      mostBookedEvents: mostBookedEvents.map(r => ({ id: Number(r.id), name: r.name as string, bookings: Number(r.bookings) })),
-      daily: dailyStats.map(r => ({ day: String(r.day), bookings: Number(r.bookings) })),
+      mostBookedEvents: mostBookedEvents.map((r) => ({
+        id: Number(r.id),
+        name: r.name,
+        bookings: Number(r.bookings),
+      })),
+      daily: dailyStats.map((r) => ({
+        day: String(r.day),
+        bookings: Number(r.bookings),
+      })),
     };
   }
 }
 
 export default BookingService;
-
-
