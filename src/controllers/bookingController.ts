@@ -3,6 +3,7 @@ import BookingService from "../services/bookingService";
 
 const bookingService = new BookingService();
 
+// Create booking (single or multiple seats)
 export const createBooking = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id as number;
@@ -25,6 +26,7 @@ export const createBooking = async (req: Request, res: Response) => {
   }
 };
 
+// Cancel booking (user or admin)
 export const cancelBooking = async (req: Request, res: Response) => {
   try {
     const bookingId = Number(req.params.id);
@@ -41,24 +43,20 @@ export const cancelBooking = async (req: Request, res: Response) => {
   }
 };
 
+// Get bookings of logged-in user
 export const myBookings = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.id as number;
-    console.log("Getting bookings for user ID:", userId);
-
-    if (!userId) {
-      return res.status(401).json({ error: "User ID not found in token" });
-    }
+    if (!userId) return res.status(401).json({ error: "User ID not found in token" });
 
     const bookings = await bookingService.getUserBookings(Number(userId));
-    console.log("Found bookings:", bookings.length);
     res.json(bookings);
   } catch (err: any) {
-    console.error("Error in myBookings:", err);
     res.status(400).json({ error: err.message });
   }
 };
 
+// Get all bookings for an event
 export const eventBookings = async (req: Request, res: Response) => {
   try {
     const eventId = Number(req.params.eventId);
@@ -69,6 +67,7 @@ export const eventBookings = async (req: Request, res: Response) => {
   }
 };
 
+// Booking analytics
 export const analytics = async (_req: Request, res: Response) => {
   try {
     const data = await bookingService.getAnalytics();

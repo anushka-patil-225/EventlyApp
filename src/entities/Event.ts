@@ -1,3 +1,5 @@
+// Event entity: stores event details, capacity, and links to bookings.
+
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -9,34 +11,33 @@ import {
 import { Booking } from "./Booking";
 
 @Entity()
-@Index("IDX_event_time", ["time"]) // frequently filtered/sorted by time (upcoming)
-@Index("IDX_event_name", ["name"]) // search / sort by name
-@Index("IDX_event_venue", ["venue"]) // search by venue
-@Index("IDX_event_capacity", ["capacity"]) // analytics / capacity filters
-@Index("IDX_event_bookedSeats", ["bookedSeats"]) // analytics / utilization queries
+@Index("IDX_event_time", ["time"])          // Filter/sort upcoming events
+@Index("IDX_event_name", ["name"])          // Search/sort by name
+@Index("IDX_event_venue", ["venue"])        // Search by venue
+@Index("IDX_event_capacity", ["capacity"])  // Analytics / filters by capacity
+@Index("IDX_event_bookedSeats", ["bookedSeats"]) // Analytics / utilization
 export class Event {
   @PrimaryGeneratedColumn()
-  id!: number;
+  id!: number; // Primary key
 
   @Column()
-  name!: string;
+  name!: string; // Event name
 
   @Column()
-  venue!: string;
+  venue!: string; // Venue name
 
   @Column({ type: "timestamp" })
-  time!: Date;
+  time!: Date; // Event date/time
 
   @Column()
-  capacity!: number;
+  capacity!: number; // Total seats
 
   @Column({ name: "bookedSeats", default: 0 })
-  bookedSeats!: number;
+  bookedSeats!: number; // Currently booked seats
 
-  // Helps with optimistic locking (kept for compatibility, though we prefer atomic UPDATEs)
   @VersionColumn()
-  version!: number;
+  version!: number; // For optimistic locking
 
   @OneToMany(() => Booking, (booking) => booking.event)
-  bookings!: Booking[];
+  bookings!: Booking[]; // Relation: event’s bookings
 }

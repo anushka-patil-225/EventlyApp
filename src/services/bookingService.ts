@@ -4,7 +4,6 @@ import { Event } from "../entities/Event";
 import { User } from "../entities/User";
 import EventService from "./eventService";
 import SeatService from "./seatService";
-import { DataSource } from "typeorm";
 
 export class BookingService {
   private bookingRepo = AppDataSource.getRepository(Booking);
@@ -13,25 +12,20 @@ export class BookingService {
   private eventService = new EventService();
   private seatService = new SeatService();
 
-  /**
-   * Create a booking (optimized with transactions & query shortcuts).
-   */
+  /** Create a booking (supports multiple seats) */
   async createBooking(
     userId: number,
     eventId: number,
     _seatIds?: string[],
-    seatNumbers?: number[] // <-- changed from seatNumber?: number
+    seatNumbers?: number[]
   ): Promise<Booking[]> {
-    // <-- returns array
     return await AppDataSource.transaction(async (manager) => {
-      // Check existence with SELECT 1 instead of fetching full entity
       const userExists = await manager
         .getRepository(User)
         .createQueryBuilder("u")
         .where("u.id = :userId", { userId })
         .select("1")
         .getRawOne();
-
       if (!userExists) throw new Error("User not found");
 
       const event = await manager.getRepository(Event).findOne({
@@ -42,42 +36,28 @@ export class BookingService {
       if (new Date(event.time) < new Date())
         throw new Error("Cannot book past events");
 
-      // Use EXISTS instead of fetching entire row
-      // const existing = await manager
-      //   .getRepository(Booking)
-      //   .createQueryBuilder("b")
-      //   .where("b.userId = :userId", { userId })
-      //   .andWhere("b.eventId = :eventId", { eventId })
-      //   .andWhere("b.status = 'booked'")
-      //   .select("1")
-      //   .getRawOne();
-
-      // if (existing) throw new Error("You already have an active booking");
-
       // Multi-seat booking
       let seatCount = 1;
       let acquiredSeats: number[] = [];
       if (seatNumbers && seatNumbers.length > 0) {
         seatCount = seatNumbers.length;
-        // Validate seat numbers
         if (seatNumbers.some((n) => n < 1 || n > event.capacity)) {
           throw new Error("Invalid seat number(s)");
         }
-        // Try to acquire all seats atomically
+
         acquiredSeats = await this.seatService.tryAcquireMultipleSeats(
           event.id,
           seatNumbers
         );
         if (acquiredSeats.length !== seatNumbers.length) {
-          // Release any acquired seats
           for (const n of acquiredSeats) {
             await this.seatService.releaseSeat(event.id, n);
           }
           throw new Error("One or more seats already taken");
         }
+
         await this.eventService.reserveSeats(event.id, seatCount);
 
-        // Create a booking row for each seat
         const bookings = seatNumbers.map((seatNumber) =>
           manager.create(Booking, {
             user: { id: userId },
@@ -89,7 +69,6 @@ export class BookingService {
         try {
           return await manager.save(bookings);
         } catch (err) {
-          // Rollback: release seats and decrement bookedSeats
           for (const n of seatNumbers) {
             await this.seatService.releaseSeat(event.id, n);
           }
@@ -111,9 +90,7 @@ export class BookingService {
     });
   }
 
-  /**
-   * Cancel booking (optimized with transaction & direct updates).
-   */
+  /** Cancel booking */
   async cancelBooking(
     bookingId: number,
     requesterId: number,
@@ -146,9 +123,7 @@ export class BookingService {
     });
   }
 
-  /**
-   * User booking history (fetch only required fields).
-   */
+  /** Get user booking history */
   async getUserBookings(userId: number) {
     return this.bookingRepo.find({
       where: { user: { id: userId } },
@@ -164,9 +139,7 @@ export class BookingService {
     });
   }
 
-  /**
-   * Event bookings (admin view).
-   */
+  /** Get bookings for an event (admin view) */
   async getEventBookings(eventId: number) {
     return this.bookingRepo.find({
       where: { event: { id: eventId } },
@@ -182,9 +155,7 @@ export class BookingService {
     });
   }
 
-  /**
-   * Analytics optimized for DB-level aggregation.
-   */
+  /** Booking analytics */
   async getAnalytics() {
     const totalBookings = await this.bookingRepo.count();
     const cancelledCount = await this.bookingRepo.count({

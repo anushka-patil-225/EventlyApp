@@ -1,3 +1,5 @@
+// UserService: handles user registration, login, profile, and admin user management.
+
 import { AppDataSource } from "../config/data-source";
 import { User } from "../entities/User";
 import bcrypt from "bcrypt";
@@ -7,9 +9,7 @@ import { Not } from "typeorm";
 export class UserService {
   private userRepo = AppDataSource.getRepository(User);
 
-  /**
-   * Create a new user
-   */
+  // Create a new user (returns safe user + JWT token)
   async createUser(
     data: Partial<User>
   ): Promise<{ user: Omit<User, "password">; token: string }> {
@@ -17,7 +17,7 @@ export class UserService {
       throw new Error("name, email and password are required");
     }
 
-    // ✅ Query optimized: select only email to check existence
+    // Check if email already exists
     const existing = await this.userRepo.findOne({
       where: { email: data.email },
       select: ["id"],
@@ -26,6 +26,7 @@ export class UserService {
       throw new Error("Email already in use");
     }
 
+    // Hash password and create user
     const hashedPassword = await bcrypt.hash(String(data.password), 10);
     const userToSave = this.userRepo.create({
       name: data.name,
@@ -36,8 +37,10 @@ export class UserService {
 
     const saved = await this.userRepo.save(userToSave);
 
-    // ✅ strip password before returning
+    // Remove password before returning user
     const { password, ...safeUser } = saved as any;
+
+    // Generate JWT for authentication
     const token = signJwtForUser({
       id: saved.id,
       email: saved.email,
@@ -46,25 +49,27 @@ export class UserService {
     return { user: safeUser, token };
   }
 
-  /**
-   * Login user
-   */
+  // Login user (returns safe user + JWT token)
   async login(
     email: string,
     password: string
   ): Promise<{ user: Omit<User, "password">; token: string }> {
-    // ✅ optimized select, don’t fetch extra fields
+    // Fetch only needed fields
     const user = await this.userRepo.findOne({
       where: { email },
       select: ["id", "email", "password", "role", "name"],
-      cache: true, // 🔹 cache frequent lookups
+      cache: true,
     });
     if (!user) throw new Error("Invalid credentials");
 
+    // Validate password
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) throw new Error("Invalid credentials");
 
+    // Strip password before returning
     const { password: _p, ...safeUser } = user as any;
+
+    // Generate JWT
     const token = signJwtForUser({
       id: user.id,
       email: user.email,
@@ -73,20 +78,16 @@ export class UserService {
     return { user: safeUser, token };
   }
 
-  /**
-   * Get a user by ID (with bookings)
-   */
+  // Get user by ID (with bookings and events)
   async getUserById(id: number): Promise<User | null> {
     return this.userRepo.findOne({
       where: { id },
       relations: ["bookings", "bookings.event"],
-      cache: true, // 🔹 users are often read
+      cache: true,
     });
   }
 
-  /**
-   * Get a user by email
-   */
+  // Get user by email
   async getUserByEmail(email: string): Promise<User | null> {
     return this.userRepo.findOne({
       where: { email },
@@ -94,11 +95,8 @@ export class UserService {
     });
   }
 
-  /**
-   * Get all users (admin only)
-   */
+  // Get all users (admin only, strips password)
   async getAllUsers(): Promise<User[]> {
-    // ✅ only fetch what’s needed
     const users = await this.userRepo.find({
       relations: ["bookings"],
       order: { id: "ASC" },
@@ -110,9 +108,7 @@ export class UserService {
     }) as unknown as User[];
   }
 
-  /**
-   * Update user (securely handles password)
-   */
+  // Update user (rehashes password if provided)
   async updateUser(id: number, updates: Partial<User>): Promise<User | null> {
     const user = await this.userRepo.findOneBy({ id });
     if (!user) return null;
@@ -129,9 +125,7 @@ export class UserService {
     return safe as unknown as User;
   }
 
-  /**
-   * Delete user
-   */
+  // Delete user by ID
   async deleteUser(id: number): Promise<boolean> {
     const result = await this.userRepo.delete(id);
     return result.affected !== 0;

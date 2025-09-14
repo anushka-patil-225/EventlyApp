@@ -2,10 +2,10 @@ import { Request, Response } from "express";
 import EventService from "../services/eventService";
 import SeatService from "../services/seatService";
 
-
 const eventService = new EventService();
 const seatService = new SeatService();
 
+// Create new event
 export const createEvent = async (req: Request, res: Response) => {
   try {
     const event = await eventService.createEvent(req.body);
@@ -15,6 +15,7 @@ export const createEvent = async (req: Request, res: Response) => {
   }
 };
 
+// Get single event by ID (with relations)
 export const getEventById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
@@ -26,6 +27,7 @@ export const getEventById = async (req: Request, res: Response) => {
   }
 };
 
+// Get seat availability for event
 export const getSeatAvailability = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
@@ -38,6 +40,7 @@ export const getSeatAvailability = async (req: Request, res: Response) => {
   }
 };
 
+// List events with filters, pagination, sorting
 export const listEvents = async (req: Request, res: Response) => {
   try {
     const { search, upcomingOnly, page, pageSize, sortBy, order } = req.query as any;
@@ -55,6 +58,7 @@ export const listEvents = async (req: Request, res: Response) => {
   }
 };
 
+// Update event by ID
 export const updateEvent = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
@@ -66,6 +70,7 @@ export const updateEvent = async (req: Request, res: Response) => {
   }
 };
 
+// Delete event by ID
 export const deleteEvent = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
@@ -77,6 +82,7 @@ export const deleteEvent = async (req: Request, res: Response) => {
   }
 };
 
+// Get analytics data
 export const analytics = async (_req: Request, res: Response) => {
   try {
     const data = await eventService.getAnalytics();
@@ -85,6 +91,3 @@ export const analytics = async (_req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 };
-
-
-

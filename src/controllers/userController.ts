@@ -3,6 +3,7 @@ import { UserService } from "../services/userService";
 
 const userService = new UserService();
 
+// Create new user
 export const createUser = async (req: Request, res: Response) => {
   try {
     const result = await userService.createUser(req.body);
@@ -12,6 +13,7 @@ export const createUser = async (req: Request, res: Response) => {
   }
 };
 
+// Get user by ID
 export const getUserById = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
@@ -23,7 +25,8 @@ export const getUserById = async (req: Request, res: Response) => {
   }
 };
 
-export const getAllUsers = async (req: Request, res: Response) => {
+// Get all users
+export const getAllUsers = async (_req: Request, res: Response) => {
   try {
     const users = await userService.getAllUsers();
     res.json(users);
@@ -32,6 +35,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
   }
 };
 
+// Update user
 export const updateUser = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
@@ -43,6 +47,7 @@ export const updateUser = async (req: Request, res: Response) => {
   }
 };
 
+// Delete user
 export const deleteUser = async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
@@ -54,6 +59,7 @@ export const deleteUser = async (req: Request, res: Response) => {
   }
 };
 
+// User login
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password } = req.body as { email: string; password: string };
