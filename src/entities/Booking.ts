@@ -13,10 +13,9 @@ import { User } from "./User";
 import { Event } from "./Event";
 
 @Entity({ name: "booking", schema: "evently" })
-@Unique("UQ_booking_event_seat", ["event", "seatNumber"]) // Prevents duplicate seat bookings for same event
-@Index("IDX_booking_userId", ["user"])       // Fast lookups by user
-@Index("IDX_booking_eventId", ["event"])     // Fast lookups by event
-@Index("IDX_booking_status", ["status"])     // Queries by status (booked/cancelled)
+@Index("IDX_booking_userId", ["user"]) // Fast lookups by user
+@Index("IDX_booking_eventId", ["event"]) // Fast lookups by event
+@Index("IDX_booking_status", ["status"]) // Queries by status (booked/cancelled)
 @Index("IDX_booking_createdAt", ["createdAt"]) // Recent bookings
 export class Booking {
   @PrimaryGeneratedColumn({ name: "id" })
