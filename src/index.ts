@@ -6,11 +6,16 @@ import userRoutes from "./routes/userRoutes";       // User APIs
 import eventRoutes from "./routes/eventRoutes";     // Event APIs
 import bookingRoutes from "./routes/bookingRoutes"; // Booking APIs
 import { setupSwagger } from "./config/swagger";    // Swagger API docs
+import { startEventCleanupScheduler } from "./jobs/eventCleanupScheduler"; // Seatmap cleanup job
 
 dotenv.config(); // Load .env variables
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const BASE_URL =
+  process.env.APP_BASE_URL ||
+  process.env.RENDER_EXTERNAL_URL ||
+  `http://localhost:${PORT}`;
 
 app.use(express.json()); // Parse JSON request bodies
 setupSwagger(app);       // Initialize Swagger documentation
@@ -29,8 +34,9 @@ app.get("/", (_req, res) => {
 AppDataSource.initialize()
   .then(() => {
     console.log("Database connected!");
+    startEventCleanupScheduler();
     app.listen(PORT, () => {
-      console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`Server running on ${BASE_URL}`);
     });
   })
   .catch((err) => {
