@@ -1,6 +1,7 @@
 import { AppDataSource } from "../config/data-source";
 import { Event } from "../entities/Event";
 import { Booking } from "../entities/Booking";
+import { parseDateAssumingIST } from "../utils/timezone";
 
 export type ListEventsParams = {
   search?: string;
@@ -25,7 +26,7 @@ export class EventService {
     const event = this.eventRepo.create({
       name: data.name,
       venue: data.venue,
-      time: new Date(String(data.time)),
+      time: parseDateAssumingIST(data.time),
       capacity: Number(data.capacity),
       bookedSeats: 0,
     } as Event);
@@ -95,8 +96,12 @@ export class EventService {
     const event = await this.eventRepo.findOneBy({ id });
     if (!event) return null;
 
-    const { bookedSeats, capacity, ...rest } = updates as any;
+    const { bookedSeats, capacity, time, ...rest } = updates as any;
     Object.assign(event, rest);
+
+    if (time != null) {
+      event.time = parseDateAssumingIST(time);
+    }
 
     if (capacity != null) {
       const newCapacity = Number(capacity);

@@ -96,10 +96,16 @@ router.get("/:id/seats", getSeatAvailability);
  *             type: object
  *             required: [name, venue, time, capacity]
  *             properties:
- *               name: { type: string }
- *               venue: { type: string }
- *               time: { type: string, format: date-time }
- *               capacity: { type: integer }
+*               name: { type: string }
+*               venue: { type: string }
+*               time:
+*                 type: string
+*                 format: date-time
+*                 description: |
+*                   ISO timestamp. If you omit timezone (e.g. `2025-09-30T09:00:00`),
+*                   the backend treats it as IST (Asia/Kolkata).
+*                 example: "2025-09-30T09:00:00"
+*               capacity: { type: integer }
  *
  *     responses:
  *       201:
@@ -134,10 +140,12 @@ router.post("/", authenticate, authorizeRoles("admin"), createEvent);
  *               venue:
  *                 type: string
  *                 example: "Updated Venue"
- *               time:
- *                 type: string
- *                 format: date-time
- *                 example: "2025-12-01T10:00:00Z"
+*               time:
+*                 type: string
+*                 format: date-time
+*                 description: |
+*                   ISO timestamp. If timezone is omitted it is interpreted as IST.
+*                 example: "2025-12-01T15:30:00"
  *               capacity:
  *                 type: integer
  *                 example: 500
@@ -155,9 +163,13 @@ router.post("/", authenticate, authorizeRoles("admin"), createEvent);
  *                   type: string
  *                 venue:
  *                   type: string
- *                 time:
- *                   type: string
- *                   format: date-time
+*                 time:
+*                   type: string
+*                   format: date-time
+*                   description: UTC timestamp stored by the backend
+*                 timeIst:
+*                   type: string
+*                   description: Human-readable IST representation
  *                 capacity:
  *                   type: integer
  *                 bookedSeats:

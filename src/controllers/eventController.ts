@@ -1,15 +1,21 @@
 import { Request, Response } from "express";
 import EventService from "../services/eventService";
 import SeatService from "../services/seatService";
+import { formatDateToIST } from "../utils/timezone";
 
 const eventService = new EventService();
 const seatService = new SeatService();
+
+const withIstTime = <T extends { time: Date }>(entity: T) => ({
+  ...entity,
+  timeIst: formatDateToIST(entity.time),
+});
 
 // Create new event
 export const createEvent = async (req: Request, res: Response) => {
   try {
     const event = await eventService.createEvent(req.body);
-    res.status(201).json(event);
+    res.status(201).json(withIstTime(event));
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -21,7 +27,7 @@ export const getEventById = async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     const event = await eventService.getEventById(id, true);
     if (!event) return res.status(404).json({ error: "Event not found" });
-    res.json(event);
+    res.json(withIstTime(event));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -52,7 +58,10 @@ export const listEvents = async (req: Request, res: Response) => {
       sortBy: sortBy as any,
       order: order as any,
     });
-    res.json(result);
+    res.json({
+      ...result,
+      items: result.items.map(withIstTime),
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -64,7 +73,7 @@ export const updateEvent = async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     const updated = await eventService.updateEvent(id, req.body);
     if (!updated) return res.status(404).json({ error: "Event not found" });
-    res.json(updated);
+    res.json(withIstTime(updated));
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
