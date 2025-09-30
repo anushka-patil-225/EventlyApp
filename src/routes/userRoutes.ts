@@ -24,6 +24,8 @@ const router = Router();
  *   get:
  *     summary: Get all users
  *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: List of users
@@ -43,6 +45,8 @@ router.get("/", authenticate, authorizeRoles("admin"), getAllUsers);
  *           type: integer
  *         required: true
  *         description: User ID
+ *     security:
+ *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: User found
@@ -114,9 +118,13 @@ router.post("/login", login);
  *   put:
  *     summary: Update a user
  *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
  *   delete:
  *     summary: Delete a user
  *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
  */
 router.put("/:id", authenticate, authorizeRoles("admin"), updateUser);
 router.delete("/:id", authenticate, authorizeRoles("admin"), deleteUser);
